@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "deployment-tools"
+version = "0.1.0"
+description = "Simple to use command running tools and file transformation/move tools."
+authors = ["Daniel Nikolaev <toolsproed@gmail.com>"]
+readme = "README.md"
+packages = [{include = "deployment_tools"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
