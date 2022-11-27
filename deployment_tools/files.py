@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 
 
@@ -27,7 +28,7 @@ class FileTransformer:
         self._replaces: list[Replace] = []
         self._add_lines: list[NewLine] = []
 
-    def update_line(self, if_line_contains: str, new_line: str):
+    def update_line(self, if_line_contains: str, new_line: str) -> FileTransformer:
         self._updates[if_line_contains] = self._ensure_line_end(new_line)
         return self
 
@@ -38,7 +39,7 @@ class FileTransformer:
         ))
         return self
 
-    def replace_in_line(self, *, pattern: str = None, old_str: str, new_str: str):
+    def replace_in_line(self, *, pattern: str = None, old_str: str, new_str: str) -> FileTransformer:
         self._replaces.append(
             Replace(old_str=old_str, new_str=new_str, pattern=pattern)
         )
@@ -50,7 +51,7 @@ class FileTransformer:
             line += '\n'
         return line
 
-    def _update_line(self, line: str):
+    def _update_line(self, line: str) -> str:
         for pattern, new_line in self._updates.items():
             if pattern in line:
                 print(f"{self.path} => setting {new_line}")

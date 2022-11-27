@@ -1,4 +1,4 @@
-import os
+from __future__ import annotations
 import subprocess
 
 
@@ -38,7 +38,7 @@ class Command:
     def _normalize_output(result: bytes) -> str:
         return str(result)[2:-1].split("\\n")
 
-    def set_success(self, expect_line: str, on_line: int = None):
+    def set_success(self, expect_line: str, on_line: int = None) -> Command:
         """
         Set success condition, where:
         :param: expected_line[str] - specifies information expected in stdout of the command (checks if param is present in any line of the output);
@@ -47,7 +47,7 @@ class Command:
         self._success_cond = expect_line if on_line is None else (on_line, expect_line)
         return self
 
-    def set_failure(self, expect_line: str, on_line: int = None):
+    def set_failure(self, expect_line: str, on_line: int = None) -> Command:
         """
         Set success condition, where:
         :param: expected_line[str] - specifies information expected in stderr of the command (checks if param is present in any line of the output);
