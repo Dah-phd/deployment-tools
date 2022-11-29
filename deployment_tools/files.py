@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+import os
 
 
 @dataclass
@@ -28,15 +29,14 @@ class FileTransformer:
         self._replaces: list[Replace] = []
         self._add_lines: list[NewLine] = []
 
-    def update_line(self, if_line_contains: str, new_line: str) -> FileTransformer:
-        self._updates[if_line_contains] = self._ensure_line_end(new_line)
+    def replace_line(self, if_line_contains: str, new_line: str) -> FileTransformer:
+        self._updates[if_line_contains] = self._ensure_newline(new_line)
         return self
 
-    def add_line(self, line: str, row=None):
-        self._add_lines.append(NewLine(
-            self._ensure_line_end(line),
-            row
-        ))
+    def add_line(self, line: str or list[str], row=None):
+        lines = [line] if isinstance(line, str) else list(line)[::-1]
+        for line in lines:
+            self._add_lines.append(NewLine(self._ensure_newline(line), row))
         return self
 
     def replace_in_line(self, *, pattern: str = None, old_str: str, new_str: str) -> FileTransformer:
@@ -46,7 +46,7 @@ class FileTransformer:
         return self
 
     @staticmethod
-    def _ensure_line_end(line: str) -> str:
+    def _ensure_newline(line: str) -> str:
         if not line.endswith('\n'):
             line += '\n'
         return line
@@ -61,10 +61,15 @@ class FileTransformer:
             return replace.replace_in_line(line)
         return line
 
+    def _get_current_file_lines(self) -> list[str]:
+        try:
+            with open(self.path, 'r') as existing_file:
+                return existing_file.readlines()
+        except FileNotFoundError:
+            return []
+
     def apply(self):
-        with open(self.path, 'r') as existing_file:
-            current_lines = existing_file.readlines()
-        new_lines = [self._update_line(line) for line in current_lines]
+        new_lines = [self._update_line(line) for line in self._get_current_file_lines()]
         for line_to_add in self._add_lines:
             if line_to_add.position is None:
                 new_lines.append(line_to_add.line)

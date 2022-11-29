@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import shutil
+from .files import FileTransformer
 ALL = "__all__"
 
 
@@ -25,6 +26,9 @@ class WorkingDirectory:
             return [file_or_dir for file_or_dir in os.listdir(self.cwd) if file_or_dir[0] != "."]
         return os.listdir(self.cwd)
 
+    def _target_withing_path(path: str, target: str) -> bool:
+        return os.path.abspath(path) in os.path.abspath(target)
+
     def go_to(self, path: str):
         os.chdir(path)
         self.previous_dirs.append(self.cwd)
@@ -33,10 +37,10 @@ class WorkingDirectory:
         self.move_to(self.previous_dirs[-1])
 
     def transfer_with_files(self, path: str, files: list[str] or str = ALL):
-        pass
+        raise NotImplementedError()
 
     def transfer_and_copy_files(self, path: str, files: list[str] or str = ALL):
-        pass
+        raise NotImplementedError()
 
     def move_file(self, path: str, file_or_dir_name: str, replace_if_exists=True):
         "Used to move file or dir."
@@ -47,6 +51,7 @@ class WorkingDirectory:
         return new_path
 
     def move_files(self, path: str, files_or_dirs: list[str] or str = ALL, ignore_dot_files=True) -> list[str]:
+        # TODO implement protection if target dir is in cwd
         "Used to move files or dirs. If no files are specified will move everything from current dir."
         if files_or_dirs == ALL:
             files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
@@ -62,6 +67,7 @@ class WorkingDirectory:
         return new_path
 
     def copy_files(self, path: str, files_or_dirs: list[str], ignore_dot_files=True, replace_if_exists=True) -> str:
+        # TODO implement protection if target dir is in cwd
         "Used to move files or dirs. If no files are specified will move everything from current dir."
         if files_or_dirs == ALL:
             files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
@@ -77,16 +83,26 @@ class WorkingDirectory:
         return str(self)
 
     def __floordiv__(self, other) -> WorkingDirectory:
-        self.move_to(str(other))
+        self.go_to(str(other))
         return self
 
     def __truediv__(self, other) -> WorkingDirectory:
-        self.move_to(str(other))
+        self.go_to(str(other))
         return self
 
     def __add__(self, other) -> WorkingDirectory:
-        self.move_to(str(other))
+        self.go_to(str(other))
         return self
+
+    def __setitem__(self, path: str, lines: list[str] or str):
+        if isinstance(lines, list) or isinstance(lines, str):
+            FileTransformer(path).add_line(lines).apply()
+        raise TypeError("UNSUPORTED ASSIGNMENT!")
+
+    def __getitem__(self, path: str) -> str or FileTransformer:
+        if os.path.isdir(path):
+            return os.path.abspath(path)
+        return FileTransformer(path)
 
 
 if __name__ == "__main__":
