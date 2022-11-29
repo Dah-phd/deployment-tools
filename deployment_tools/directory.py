@@ -47,11 +47,11 @@ class WorkingDirectory:
         new_path = os.path.join(path, file_or_dir_name)
         if replace_if_exists and os.path.isfile(new_path) or os.path.isdir(new_path):
             self.remove(new_path)
-        shutil.move(file_or_dir_name, new_path)
+        if os.path.abspath(file_or_dir_name) != os.path.abspath(new_path):
+            shutil.move(file_or_dir_name, new_path)
         return new_path
 
     def move_files(self, path: str, files_or_dirs: list[str] or str = ALL, ignore_dot_files=True) -> list[str]:
-        # TODO implement protection if target dir is in cwd
         "Used to move files or dirs. If no files are specified will move everything from current dir."
         if files_or_dirs == ALL:
             files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
@@ -62,12 +62,12 @@ class WorkingDirectory:
         new_path = os.path.join(path, file_or_dir_name)
         if not replace_if_exists and os.path.isfile(new_path) or os.path.isdir(new_path):
             raise FileExistsError(f"{new_path} is present!")
-        shutil.copytree(file_or_dir_name, new_path) if os.path.isdir(file_or_dir_name) \
-            else shutil.copy(file_or_dir_name, new_path)
+        if os.path.abspath(file_or_dir_name) != os.path.abspath(new_path):
+            shutil.copytree(file_or_dir_name, new_path) if os.path.isdir(file_or_dir_name) \
+                else shutil.copy(file_or_dir_name, new_path)
         return new_path
 
     def copy_files(self, path: str, files_or_dirs: list[str], ignore_dot_files=True, replace_if_exists=True) -> str:
-        # TODO implement protection if target dir is in cwd
         "Used to move files or dirs. If no files are specified will move everything from current dir."
         if files_or_dirs == ALL:
             files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
