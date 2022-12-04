@@ -85,6 +85,17 @@ class FileTransformer:
             line += '\n'
         return line
 
+    def add_update_with_list_appends(self, update: dict):
+        self.__transform_lists_to_tuples_in_dict(update)
+        self._updates.append(update)
+
+    def __transform_lists_to_tuples_in_dict(self, data: dict):
+        for key, val in data:
+            if isinstance(val, dict):
+                self.__transform_lists_to_tuples_in_dict(val)
+            if isinstance(val, list):
+                data[key] = tuple(val)
+
     def save(self, data):
         file_data = self._read()
         write = _FileType.get_writer_callback(self.file_type)
@@ -112,7 +123,7 @@ class FileTransformer:
             raise TypeError(f"Unsuported type: {type(other)} by + operand. You can use dict or str or list.")
         if isinstance(other, list):
             for el in other:
-                if not isinstance(other, str) and not isinstance(other, dict):
+                if not isinstance(el, str) and not isinstance(el, dict):
                     raise TypeError(
                         f"Unsuported type: {type(other)} by + operand. You can use dict or str in list of updates."
                     )
@@ -136,8 +147,8 @@ class FileTransformer:
                 base[key] = val
             elif isinstance(val, dict):
                 self.__update_keys_in_dict(base[key], val)
-            elif isinstance(val, list) and isinstance(base[key], list):
-                base[key] += val
+            elif isinstance(val, tuple):
+                base[key] += list(val)
             else:
                 base[key] = val
 
