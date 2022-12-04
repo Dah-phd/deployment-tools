@@ -1,5 +1,4 @@
 from __future__ import annotations
-from dataclasses import dataclass
 from enum import Enum
 import json
 import toml
@@ -53,41 +52,52 @@ class FileTransformer:
     def __init__(self, path: str) -> None:
         self.path: str = path
         self._out_path: str = path
-        self.file_type = _FileType.get_type(path)
+        self.__file_type = _FileType.get_type(path)
+        self.__out_type = self.__file_type
         self._updates = []
+        self._replaces = []
+
+    @classmethod
+    def create_file(cls, path, data):
+        fs = cls(path) + data
+        fs.save()
 
     def __set_path(self, path: str or None):
         if path is not None:
             self._out_path = path
 
     def __raise_transformation_err(self):
-        if self.file_type is _FileType.TEXT:
-            raise FileTransformationError(f"Unable to parse TEXT file tree to {_FileType.stringify(self.file_type)}")
+        if self.__file_type is _FileType.TEXT:
+            raise FileTransformationError(f"Unable to parse TEXT file tree to {_FileType.stringify(self.__file_type)}")
 
     def to_json(self, path: str = None):
         self.__raise_transformation_err()
         self.__set_path(path)
-        self.file_type = _FileType.JSON
+        self.__out_type = _FileType.JSON
 
     def to_toml(self, path: str = None):
         self.__raise_transformation_err()
         self.__set_path(path)
-        self.file_type = _FileType.TOML
+        self.__out_type = _FileType.TOML
 
     def to_yaml(self, path: str = None):
         self.__raise_transformation_err()
         self.__set_path(path)
-        self.file_type = _FileType.YAML
+        self.__out_type = _FileType.YAML
 
-    @staticmethod
-    def __ensure_newline(line: str) -> str:
-        if not line.endswith('\n'):
-            line += '\n'
-        return line
+    def to_text(self, path: str = None):
+        self.__set_path(path)
+        self.__out_type = _FileType.JSON
 
     def add_update_with_list_appends(self, update: dict):
         self.__transform_lists_to_tuples_in_dict(update)
         self._updates.append(update)
+
+    def replace_in_text_file(self, old: str, new: str):
+        """
+        This method can be used only for text files
+        """
+        self._replaces.append((old, new))
 
     def __transform_lists_to_tuples_in_dict(self, data: dict):
         for key, val in data:
@@ -96,23 +106,48 @@ class FileTransformer:
             if isinstance(val, list):
                 data[key] = tuple(val)
 
-    def save(self, data):
+    def save(self):
         file_data = self._read()
-        write = _FileType.get_writer_callback(self.file_type)
+        write = _FileType.get_writer_callback(self.__file_type)
         if file_data is not None:
-            new_lines = [self.__update_line(line) for line in self.__reader()]
-            for line_to_add in self._lines_to_add:
-                line_to_add.self_insert_into(new_lines)
-            with open(self._path, 'w') as new_file:
-                new_file.writelines(new_lines)
+            for update in self._updates:
+                if isinstance(file_data, dict):
+                    self.__update_keys_in_dict(file_data, update)
+                if isinstance(file_data, list):
+                    file_data += self.__update_text_file_lines(file_data)
         with open(self._out_path, 'w') as target:
-            write(data, target)
+            write(file_data, target)
+
+    def __update_keys_in_dict(self, base: dict, new: dict):
+        for key, val in new.items():
+            if key not in base:
+                base[key] = val
+            elif isinstance(val, dict):
+                self.__update_keys_in_dict(base[key], val)
+            elif isinstance(val, tuple):
+                base[key] += list(val)
+            else:
+                base[key] = val
+
+    def __update_text_file_lines(self, file_data: list[str]) -> list[str]:
+        new_lines = []
+        for idx, line in enumerate(file_data):
+            for update in self._updates:
+                if isinstance(update, dict):
+                    for key, new_line in update.items():
+                        if key in line:
+                            file_data[idx] = self.__ensure_newline(new_line)
+                if isinstance(update, str):
+                    new_lines.append(self.__ensure_newline(update))
+            for replace in self._replaces:
+                file_data[idx] = line.replace(replace[0], replace[1])
+        return new_lines
 
     def __getitem__(self, key: str) -> FileTransformer:
         return FileTransformer(key)
 
     def __setitem__(self, key: str, item):
-        ft = FileTransformer(key)
+        ft = FileTransformer(key).__add__({key: item})
 
     def __sub__(self, other):
         NotImplementedError()
@@ -135,23 +170,20 @@ class FileTransformer:
             return None
         with open(self.path, 'r') as data:
             try:
-                return self.file_type(data)
+                return self.__file_type(data)
             except Exception as e:
+                self.__file_type = _FileType.TEXT
+                self.__out_type = _FileType.TEXT
                 print(e)
                 print("====> reading as text ...")
-                return _FileType.TEXT(data)
+                return self.__file_type(data)
 
-    def __update_keys_in_dict(self, base: dict, new: dict):
-        for key, val in new.items():
-            if key not in base:
-                base[key] = val
-            elif isinstance(val, dict):
-                self.__update_keys_in_dict(base[key], val)
-            elif isinstance(val, tuple):
-                base[key] += list(val)
-            else:
-                base[key] = val
+    @staticmethod
+    def __ensure_newline(line: str) -> str:
+        if not line.endswith('\n'):
+            line += '\n'
+        return line
 
 
 if __name__ == '__main__':
-    FileTransformer("new_json.json").save({"asd": 123})
+    FileTransformer("new_json.json").save()
