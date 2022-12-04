@@ -14,7 +14,7 @@ class Command:
     If the tests run by the command fail exception with information will be raised, otherwise the code will proceed with execution.
     """
 
-    def __init__(self, args: list[str]) -> None:
+    def __init__(self, args: list[str], verbose: bool = True) -> None:
         self.args = args
         self._process = subprocess.run(
             args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -23,7 +23,12 @@ class Command:
         self._success_cond = None
         self.output = self._normalize_output(self._process.stdout)
         self.error = self._normalize_output(self._process.stderr)
+        verbose and self.show_log()
         self.log_errors()
+
+    def show_log(self):
+        for line in self.output:
+            print(f'\t{line}')
 
     def log_errors(self):
         """
@@ -31,8 +36,11 @@ class Command:
         """
         if self.error:
             print(f"STDERR logs on {' '.join(self.args)}:")
-            for err in self.error:
-                print(err)
+            if self.error:
+                for err in self.error:
+                    print(err)
+            else:
+                print("\t\tOK")
 
     @staticmethod
     def _normalize_output(result: bytes) -> str:
