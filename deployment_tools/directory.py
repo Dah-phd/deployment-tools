@@ -96,7 +96,7 @@ class WorkingDirectory:
 
     def __setitem__(self, path: str, lines: list[str] or str):
         if isinstance(lines, list) or isinstance(lines, str):
-            FileTransformer(path).add_line(lines).apply()
+            FileTransformer(path).add_line(lines).save()
         raise TypeError("UNSUPORTED ASSIGNMENT!")
 
     def __getitem__(self, path: str) -> str or FileTransformer:

@@ -8,6 +8,8 @@ packages = [{include = "deployment_tools"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+toml = "^0.10.2"
+pyyaml = "^6.0"
 
 
 [build-system]

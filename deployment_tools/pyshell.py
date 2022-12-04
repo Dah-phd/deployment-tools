@@ -23,10 +23,10 @@ class Command:
         self._success_cond = None
         self.output = self._normalize_output(self._process.stdout)
         self.error = self._normalize_output(self._process.stderr)
-        verbose and self.show_log()
+        verbose and self.log_output()
         self.log_errors()
 
-    def show_log(self):
+    def log_output(self):
         for line in self.output:
             print(f'\t{line}')
 

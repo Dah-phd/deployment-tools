@@ -1,79 +1,146 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from enum import Enum
+import json
+import toml
+import yaml
+from pprint import pprint
+from os.path import isfile
 
 
-@dataclass
-class _Replace:
-    new_str: str = ''
-    old_str: str = ''
-    new_line: set = None
-    pattern: str = None
-
-    def make_updates(self, line: str) -> str:
-        if self.pattern is not None:
-            if self.pattern not in line:
-                return line
-            if self.new_line is not None:
-                print(f"\t{line} => {self.new_line}")
-                return self.new_line
-        print(f"\t{self.old_str} => {self.new_str}")
-        return line.replace(self.old_str, self.new_str)
+class FileTransformationError(Exception):
+    pass
 
 
-@dataclass
-class _NewLine:
-    line: str
-    position: int or None = None
+class _FileType(Enum):
+    JSON = json.load
+    YAML = lambda reader: yaml.load(reader, Loader=yaml.Loader)
+    TOML = toml.load
+    TEXT = lambda reader: reader.readlines()
 
-    def self_insert_into(self, lines_list: list[str]) -> list[str]:
-        if self.position is None:
-            lines_list.append(self.line)
-        else:
-            lines_list.insert(self.position, self.line)
-        return lines_list
+    @staticmethod
+    def get_writer_callback(file_type: _FileType) -> function:
+        return {
+            _FileType.JSON: lambda data, writer: json.dump(data, writer, indent=4),
+            _FileType.YAML: lambda data, writer: yaml.dump(data, writer, indent=2, Dumper=yaml.Dumper),
+            _FileType.TOML: lambda data, writer: toml.dump(data, writer),
+            _FileType.TEXT: lambda data, writer: writer.writelines(data)
+        }[file_type]
+
+    @classmethod
+    def get_type(cls, path: str) -> _FileType:
+        ext = path.split('.')[-1].lower()
+        if ext == 'json':
+            return cls.JSON
+        if ext in ['yml', 'yaml']:
+            return cls.YAML
+        if ext == 'toml':
+            return cls.TOML
+        return cls.TEXT
+
+    @staticmethod
+    def stringify(file_type: _FileType):
+        if file_type is _FileType.JSON:
+            return "JSON"
+        if file_type is _FileType.YAML:
+            return "YAML"
+        if file_type is _FileType.TOML:
+            return "TOML"
+        return "TEXT"
 
 
 class FileTransformer:
     def __init__(self, path: str) -> None:
         self.path: str = path
-        self._replaces: list[_Replace] = []
-        self._lines_to_add: list[_NewLine] = []
+        self._out_path: str = path
+        self.file_type = _FileType.get_type(path)
+        self._updates = []
 
-    def replace_line(self, pattern: str, new_line: str) -> FileTransformer:
-        self._replaces.append(_Replace(new_line=new_line, pattern=pattern))
-        return self
+    def __set_path(self, path: str or None):
+        if path is not None:
+            self._out_path = path
 
-    def replace_in_line(self, *, pattern: str = None, old_str: str, new_str: str) -> FileTransformer:
-        self._replaces.append(_Replace(old_str=old_str, new_str=new_str, pattern=pattern))
-        return self
+    def __raise_transformation_err(self):
+        if self.file_type is _FileType.TEXT:
+            raise FileTransformationError(f"Unable to parse TEXT file tree to {_FileType.stringify(self.file_type)}")
 
-    def add_line(self, line: str or list[str], row=None):
-        lines = [line] if isinstance(line, str) else list(line)[::-1]
-        for line in lines:
-            self._lines_to_add.append(_NewLine(self._ensure_newline(line), row))
-        return self
+    def to_json(self, path: str = None):
+        self.__raise_transformation_err()
+        self.__set_path(path)
+        self.file_type = _FileType.JSON
+
+    def to_toml(self, path: str = None):
+        self.__raise_transformation_err()
+        self.__set_path(path)
+        self.file_type = _FileType.TOML
+
+    def to_yaml(self, path: str = None):
+        self.__raise_transformation_err()
+        self.__set_path(path)
+        self.file_type = _FileType.YAML
 
     @staticmethod
-    def _ensure_newline(line: str) -> str:
+    def __ensure_newline(line: str) -> str:
         if not line.endswith('\n'):
             line += '\n'
         return line
 
-    def _update_line(self, line: str) -> str:
-        for line_replace in self._replaces:
-            line = line_replace.make_updates(line)
-        return line
+    def save(self, data):
+        file_data = self._read()
+        write = _FileType.get_writer_callback(self.file_type)
+        if file_data is not None:
+            new_lines = [self.__update_line(line) for line in self.__reader()]
+            for line_to_add in self._lines_to_add:
+                line_to_add.self_insert_into(new_lines)
+            with open(self._path, 'w') as new_file:
+                new_file.writelines(new_lines)
+        with open(self._out_path, 'w') as target:
+            write(data, target)
 
-    def _get_current_file_lines(self) -> list[str]:
-        try:
-            with open(self.path, 'r') as existing_file:
-                return existing_file.readlines()
-        except FileNotFoundError:
-            return []
+    def __getitem__(self, key: str) -> FileTransformer:
+        return FileTransformer(key)
 
-    def apply(self):
-        new_lines = [self._update_line(line) for line in self._get_current_file_lines()]
-        for line_to_add in self._lines_to_add:
-            line_to_add.self_insert_into(new_lines)
-        with open(self.path, 'w') as new_file:
-            new_file.writelines(new_lines)
+    def __setitem__(self, key: str, item):
+        ft = FileTransformer(key)
+
+    def __sub__(self, other):
+        NotImplementedError()
+        return self
+
+    def __add__(self, other):
+        if not isinstance(other, str) and not isinstance(other, dict) and not isinstance(list):
+            raise TypeError(f"Unsuported type: {type(other)} by + operand. You can use dict or str or list.")
+        if isinstance(other, list):
+            for el in other:
+                if not isinstance(other, str) and not isinstance(other, dict):
+                    raise TypeError(
+                        f"Unsuported type: {type(other)} by + operand. You can use dict or str in list of updates."
+                    )
+        self._updates.append(other)
+        return self
+
+    def _read(self) -> dict or list or None:
+        if not isfile(self.path):
+            return None
+        with open(self.path, 'r') as data:
+            try:
+                return self.file_type(data)
+            except Exception as e:
+                print(e)
+                print("====> reading as text ...")
+                return _FileType.TEXT(data)
+
+    def __update_keys_in_dict(self, base: dict, new: dict):
+        for key, val in new.items():
+            if key not in base:
+                base[key] = val
+            elif isinstance(val, dict):
+                self.__update_keys_in_dict(base[key], val)
+            elif isinstance(val, list) and isinstance(base[key], list):
+                base[key] += val
+            else:
+                base[key] = val
+
+
+if __name__ == '__main__':
+    FileTransformer("new_json.json").save({"asd": 123})
