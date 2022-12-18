@@ -3,7 +3,6 @@ from enum import Enum
 import json
 import toml
 import yaml
-from pprint import pprint
 from os.path import isfile
 
 
@@ -56,6 +55,7 @@ class FileTransformer:
         self.__out_type = self.__file_type
         self._updates = []
         self._replaces = []
+        self._removals = []
 
     @classmethod
     def create_file(cls, path, data):
@@ -109,14 +109,19 @@ class FileTransformer:
     def save(self):
         file_data = self._read()
         write = _FileType.get_writer_callback(self.__file_type)
-        if file_data is not None:
-            for update in self._updates:
-                if isinstance(file_data, dict):
-                    self.__update_keys_in_dict(file_data, update)
-                if isinstance(file_data, list):
-                    file_data += self.__update_text_file_lines(file_data)
+        if isinstance(file_data, dict):
+            self.__update_config_file_lines(file_data)
+        if isinstance(file_data, list):
+            self.__update_text_file_lines(file_data)
         with open(self._out_path, 'w') as target:
             write(file_data, target)
+
+    def __update_config_file_lines(self, file_data: dict):
+        for update in self._updates:
+            self.__update_keys_in_dict(file_data, update)
+        for removal in self._removals:
+            if removal in file_data:
+                del file_data[removal]
 
     def __update_keys_in_dict(self, base: dict, new: dict):
         for key, val in new.items():
@@ -129,18 +134,29 @@ class FileTransformer:
             else:
                 base[key] = val
 
-    def __update_text_file_lines(self, file_data: list[str]) -> list[str]:
+    def __update_text_file_lines(self, file_data: list[str]):
         new_lines = []
+        drop_list = []
         for idx, line in enumerate(file_data):
-            for update in self._updates:
-                if isinstance(update, dict):
-                    for key, new_line in update.items():
-                        if key in line:
-                            file_data[idx] = self.__ensure_newline(new_line)
-                if isinstance(update, str):
-                    new_lines.append(self.__ensure_newline(update))
+            new_lines += self.__apply_updates_in_text_line(file_data, idx, line)
             for replace in self._replaces:
                 file_data[idx] = line.replace(replace[0], replace[1])
+            for removal in self._removals:
+                if removal in line:
+                    drop_list.append(line)
+        for drop in set(drop_list):
+            file_data.remove(drop)
+        file_data.extend(new_lines)
+
+    def __apply_updates_in_text_line(self, file_data: list[str], idx: int, line: str):
+        new_lines = []
+        for update in self._updates:
+            if isinstance(update, dict):
+                for key, new_line in update.items():
+                    if key in line:
+                        file_data[idx] = self.__ensure_newline(new_line)
+            if isinstance(update, str):
+                new_lines.append(self.__ensure_newline(update))
         return new_lines
 
     def __getitem__(self, key: str) -> FileTransformer:
@@ -149,8 +165,10 @@ class FileTransformer:
     def __setitem__(self, key: str, item):
         ft = FileTransformer(key).__add__({key: item})
 
-    def __sub__(self, other):
-        NotImplementedError()
+    def __sub__(self, other: str):
+        if not isinstance(other, str):
+            raise TypeError("Subtraction supports only string at the moment - defining key or pattern to be dropped.")
+        self._removals.append(other)
         return self
 
     def __add__(self, other):
@@ -167,7 +185,7 @@ class FileTransformer:
 
     def _read(self) -> dict or list or None:
         if not isfile(self.path):
-            return None
+            return [] if self.__file_type is _FileType.TEXT else dict()
         with open(self.path, 'r') as data:
             try:
                 return self.__file_type(data)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import subprocess
+from sys import platform as PLATFORM
 
 
 class ShellCommandError(Exception):
@@ -16,8 +17,9 @@ class Command:
 
     def __init__(self, args: list[str], verbose: bool = True) -> None:
         self.args = args
+        run_kwargs = {'shell': True} if PLATFORM == 'win32' else {}
         self._process = subprocess.run(
-            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **run_kwargs
         )
         self._failure_cond = None
         self._success_cond = None
@@ -34,13 +36,13 @@ class Command:
         """
         logs infromation stored in stderr
         """
-        if self.error:
+        if self.error != ['']:
             print(f"STDERR logs on {' '.join(self.args)}:")
-            if self.error:
-                for err in self.error:
-                    print(err)
-            else:
-                print("\t\tOK")
+
+            for err in self.error:
+                print(err)
+        else:
+            print("Status: OK")
 
     @staticmethod
     def _normalize_output(result: bytes) -> str:
@@ -82,7 +84,7 @@ class Command:
         """
         Check failure condition;
         """
-        if self._failure_cond is None and self.error:
+        if self._failure_cond is None and self.error != ['']:
             return True
         if isinstance(self._failure_cond, tuple):
             return self._failure_cond[1] in self.error[self._failure_cond[0]]
