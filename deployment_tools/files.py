@@ -3,7 +3,7 @@ from enum import Enum
 import json
 import toml
 import yaml
-from os.path import isfile
+from os import path, remove
 
 
 class FileTransformationError(Exception):
@@ -116,6 +116,10 @@ class FileTransformer:
         with open(self._out_path, 'w') as target:
             write(file_data, target)
 
+    def delete(self):
+        if path.isfile(self.path):
+            remove(self.path)
+
     def __update_config_file_lines(self, file_data: dict):
         for update in self._updates:
             self.__update_keys_in_dict(file_data, update)
@@ -172,7 +176,7 @@ class FileTransformer:
         return self
 
     def __add__(self, other):
-        if not isinstance(other, str) and not isinstance(other, dict) and not isinstance(list):
+        if not isinstance(other, str) and not isinstance(other, dict) and not isinstance(other, list):
             raise TypeError(f"Unsuported type: {type(other)} by + operand. You can use dict or str or list.")
         if isinstance(other, list):
             for el in other:
@@ -184,7 +188,7 @@ class FileTransformer:
         return self
 
     def _read(self) -> dict or list or None:
-        if not isfile(self.path):
+        if not path.isfile(self.path):
             return [] if self.__file_type is _FileType.TEXT else dict()
         with open(self.path, 'r') as data:
             try:
