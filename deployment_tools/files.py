@@ -1,5 +1,6 @@
 from __future__ import annotations
 from enum import Enum
+from io import TextIOWrapper
 import json
 import toml
 import yaml
@@ -10,202 +11,167 @@ class FileTransformationError(Exception):
     pass
 
 
-class _FileType(Enum):
-    JSON = json.load
-    YAML = lambda reader: yaml.load(reader, Loader=yaml.Loader)
-    TOML = toml.load
-    TEXT = lambda reader: reader.readlines()
+class _BaseBuilder:
+    def __init__(self, path: str, updates: list) -> None:
+        self.path = path
+        self.updates: list = updates
+        self.base_data: list | dict = self._read()
+        self._make_updates()
+        self.base_data = self.post_processing(self.base_data)
+        self._write()
 
-    @staticmethod
-    def get_writer_callback(file_type: _FileType) -> function:
-        return {
-            _FileType.JSON: lambda data, writer: json.dump(data, writer, indent=4),
-            _FileType.YAML: lambda data, writer: yaml.dump(data, writer, indent=2, Dumper=yaml.Dumper),
-            _FileType.TOML: lambda data, writer: toml.dump(data, writer),
-            _FileType.TEXT: lambda data, writer: writer.writelines(data)
-        }[file_type]
+    def _read(self) -> dict | list | None:
+        if not path.isfile(self.path):
+            return []
+        with open(self.path, 'r') as file_object:
+            return self.loader(file_object)
 
-    @classmethod
-    def get_type(cls, path: str) -> _FileType:
-        ext = path.split('.')[-1].lower()
-        if ext == 'json':
-            return cls.JSON
-        if ext in ['yml', 'yaml']:
-            return cls.YAML
-        if ext == 'toml':
-            return cls.TOML
-        return cls.TEXT
+    def loader(self, file_object: TextIOWrapper) -> dict | list:
+        NotImplementedError()
 
-    @staticmethod
-    def stringify(file_type: _FileType):
-        if file_type is _FileType.JSON:
-            return "JSON"
-        if file_type is _FileType.YAML:
-            return "YAML"
-        if file_type is _FileType.TOML:
-            return "TOML"
-        return "TEXT"
+    def _write(self):
+        with open(self.path, 'w') as file_object:
+            return self.writer(self.base_data, file_object)
+
+    def writer(self, new_data: dict | list, file_object: TextIOWrapper):
+        NotImplementedError()
+
+    def post_processing(self, base_data) -> list | dict:
+        return base_data
+
+    def _make_updates(self):
+        for update in self.updates:
+            self.base_data = self.recursive_update(self.base_data, update)
+
+    def recursive_update(self, base_data: dict | list, update) -> dict | list:
+        raise NotImplementedError()
 
 
-class FileTransformer:
-    def __init__(self, path: str) -> None:
-        self.path: str = path
-        self._out_path: str = path
-        self.__file_type = _FileType.get_type(path)
-        self.__out_type = self.__file_type
-        self._updates = []
-        self._replaces = []
-        self._removals = []
+class JsonBuilder(_BaseBuilder):
+    def loader(self, file_object: TextIOWrapper):
+        return json.load(file_object)
 
-    @classmethod
-    def create_file(cls, path, data):
-        fs = cls(path) + data
-        fs.save()
+    def writer(self, new_data: dict | list, file_object: TextIOWrapper):
+        return json.dump(new_data, file_object, indent=4)
 
-    def __set_path(self, path: str or None):
-        if path is not None:
-            self._out_path = path
+    def recursive_update(self, data: dict | list, update):
+        if isinstance(data, dict):
+            if isinstance(update, list):
+                for upd_part in update:
+                    data = self.recursive_update(data, upd_part)
+            if isinstance(update, dict):
+                for k, v in update.items():
+                    data[k] = v if k not in data else self.recursive_update(data[k], v)
+        if isinstance(data, list):
+            if not data:
+                return update
+            if isinstance(update, tuple):
+                return list(update)
+            if isinstance(update, list):
+                data.extend(update)
+            data.append(update)
+        return data
 
-    def __raise_transformation_err(self):
-        if self.__file_type is _FileType.TEXT:
-            raise FileTransformationError(f"Unable to parse TEXT file tree to {_FileType.stringify(self.__file_type)}")
 
-    def to_json(self, path: str = None):
-        self.__raise_transformation_err()
-        self.__set_path(path)
-        self.__out_type = _FileType.JSON
+class TomlBuilder(_BaseBuilder):
+    def loader(self, file_object: TextIOWrapper):
+        return toml.load(file_object)
 
-    def to_toml(self, path: str = None):
-        self.__raise_transformation_err()
-        self.__set_path(path)
-        self.__out_type = _FileType.TOML
+    def writer(self, new_data: dict | list, file_object: TextIOWrapper):
+        return toml.dump(new_data, file_object)
 
-    def to_yaml(self, path: str = None):
-        self.__raise_transformation_err()
-        self.__set_path(path)
-        self.__out_type = _FileType.YAML
+    def recursive_update(self, data: dict | list, update):
+        if isinstance(data, dict):
+            if isinstance(update, list):
+                for upd_part in update:
+                    data = self.recursive_update(data, upd_part)
+            if isinstance(update, dict):
+                for k, v in update.items():
+                    data[k] = v if k not in data else self.recursive_update(data[k], v)
+        if isinstance(data, list):
+            if not data:
+                return update
+            if isinstance(update, tuple):
+                return list(update)
+            if isinstance(update, list):
+                data.extend(update)
+            data.append(update)
+        return data
 
-    def to_text(self, path: str = None):
-        self.__set_path(path)
-        self.__out_type = _FileType.JSON
 
-    def add_update_with_list_appends(self, update: dict):
-        self.__transform_lists_to_tuples_in_dict(update)
-        self._updates.append(update)
+class YamlBuilder(_BaseBuilder):
+    def loader(self, file_object: TextIOWrapper):
+        return yaml.load(file_object, yaml.Loader)
 
-    def replace_in_text_file(self, old: str, new: str):
-        """
-        This method can be used only for text files
-        """
-        self._replaces.append((old, new))
+    def writer(self, new_data: dict | list, file_object: TextIOWrapper):
+        return yaml.dump(new_data, file_object, indent=2, Dumper=yaml.Dumper)
 
-    def __transform_lists_to_tuples_in_dict(self, data: dict):
-        for key, val in data:
-            if isinstance(val, dict):
-                self.__transform_lists_to_tuples_in_dict(val)
-            if isinstance(val, list):
-                data[key] = tuple(val)
+    def recursive_update(self, data: dict | list, update):
+        if isinstance(data, dict):
+            if isinstance(update, list):
+                for upd_part in update:
+                    data = self.recursive_update(data, upd_part)
+            if isinstance(update, dict):
+                for k, v in update.items():
+                    data[k] = v if k not in data else self.recursive_update(data[k], v)
+        if isinstance(data, list):
+            if not data:
+                return update
+            if isinstance(update, tuple):
+                return list(update)
+            if isinstance(update, list):
+                data.extend(update)
+            data.append(update)
+        return data
 
-    def save(self):
-        file_data = self._read()
-        write = _FileType.get_writer_callback(self.__file_type)
-        if isinstance(file_data, dict):
-            self.__update_config_file_lines(file_data)
-        if isinstance(file_data, list):
-            self.__update_text_file_lines(file_data)
-        with open(self._out_path, 'w') as target:
-            write(file_data, target)
+
+class TxtBuilder(_BaseBuilder):
+    def loader(self, file_object: TextIOWrapper) -> list:
+        return file_object.readlines()
+
+    def writer(self, new_data: list, file_object: TextIOWrapper):
+        file_object.writelines(new_data)
+
+    def recursive_update(self, base_data: list[str], update) -> dict | list:
+        if isinstance(update, tuple):
+            if isinstance(update[0], int):
+                base_data[update[0]] = update[1]
+            if isinstance(update[0], str):
+                base_data = [line.replace(update[0], update[1]) for line in base_data]
+        elif isinstance(update, dict):
+            for k, v in update.items():
+                base_data = [line if k not in line else v for line in base_data]
+        elif isinstance(update, list):
+            base_data.extend(update)
+        else:
+            base_data.append(str(update))
+        return base_data
+
+    def post_processing(self, base_data: list[str]) -> list:
+        return [line if line.endswith('\n') else f'{line}\n' for line in base_data]
+
+
+class FileBuilder:
+    file_types = {
+        "json": JsonBuilder,
+        "toml": TomlBuilder,
+        "yml": YamlBuilder,
+        "yaml": YamlBuilder
+    }
+
+    def __init__(self, path: str, type_: str | None = None) -> None:
+        self.path = path
+        self.updates = []
+        self.type_ = self.path.split('.')[-1].lower() if type_ is None else type_
+        self.Builder = self.file_types.get(self.type_, TxtBuilder)
+
+    def __add__(self, other) -> FileBuilder:
+        self.updates.append(other)
+        return self
 
     def delete(self):
         if path.isfile(self.path):
             remove(self.path)
 
-    def __update_config_file_lines(self, file_data: dict):
-        for update in self._updates:
-            self.__update_keys_in_dict(file_data, update)
-        for removal in self._removals:
-            if removal in file_data:
-                del file_data[removal]
-
-    def __update_keys_in_dict(self, base: dict, new: dict):
-        for key, val in new.items():
-            if key not in base:
-                base[key] = val
-            elif isinstance(val, dict):
-                self.__update_keys_in_dict(base[key], val)
-            elif isinstance(val, tuple):
-                base[key] += list(val)
-            else:
-                base[key] = val
-
-    def __update_text_file_lines(self, file_data: list[str]):
-        new_lines = []
-        drop_list = []
-        for idx, line in enumerate(file_data):
-            new_lines += self.__apply_updates_in_text_line(file_data, idx, line)
-            for replace in self._replaces:
-                file_data[idx] = line.replace(replace[0], replace[1])
-            for removal in self._removals:
-                if removal in line:
-                    drop_list.append(line)
-        for drop in set(drop_list):
-            file_data.remove(drop)
-        file_data.extend(new_lines)
-
-    def __apply_updates_in_text_line(self, file_data: list[str], idx: int, line: str):
-        new_lines = []
-        for update in self._updates:
-            if isinstance(update, dict):
-                for key, new_line in update.items():
-                    if key in line:
-                        file_data[idx] = self.__ensure_newline(new_line)
-            if isinstance(update, str):
-                new_lines.append(self.__ensure_newline(update))
-        return new_lines
-
-    def __getitem__(self, key: str) -> FileTransformer:
-        return FileTransformer(key)
-
-    def __setitem__(self, key: str, item):
-        ft = FileTransformer(key).__add__({key: item})
-
-    def __sub__(self, other: str):
-        if not isinstance(other, str):
-            raise TypeError("Subtraction supports only string at the moment - defining key or pattern to be dropped.")
-        self._removals.append(other)
-        return self
-
-    def __add__(self, other):
-        if not isinstance(other, str) and not isinstance(other, dict) and not isinstance(other, list):
-            raise TypeError(f"Unsuported type: {type(other)} by + operand. You can use dict or str or list.")
-        if isinstance(other, list):
-            for el in other:
-                if not isinstance(el, str) and not isinstance(el, dict):
-                    raise TypeError(
-                        f"Unsuported type: {type(other)} by + operand. You can use dict or str in list of updates."
-                    )
-        self._updates.append(other)
-        return self
-
-    def _read(self) -> dict or list or None:
-        if not path.isfile(self.path):
-            return [] if self.__file_type is _FileType.TEXT else dict()
-        with open(self.path, 'r') as data:
-            try:
-                return self.__file_type(data)
-            except Exception as e:
-                self.__file_type = _FileType.TEXT
-                self.__out_type = _FileType.TEXT
-                print(e)
-                print("====> reading as text ...")
-                return self.__file_type(data)
-
-    @staticmethod
-    def __ensure_newline(line: str) -> str:
-        if not line.endswith('\n'):
-            line += '\n'
-        return line
-
-
-if __name__ == '__main__':
-    FileTransformer("new_json.json").save()
+    def save(self):
+        self.Builder(self.path, self.updates)
