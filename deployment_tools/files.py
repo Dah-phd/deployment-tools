@@ -1,5 +1,5 @@
 from __future__ import annotations
-from enum import Enum
+from copy import deepcopy
 from io import TextIOWrapper
 import json
 import toml
@@ -12,17 +12,17 @@ class FileTransformationError(Exception):
 
 
 class _BaseBuilder:
-    def __init__(self, path: str, updates: list) -> None:
+    def __init__(self, path: str, updates: list, blanked=False) -> None:
         self.path = path
         self.updates: list = updates
-        self.base_data: list | dict = self._read()
+        self.base_data: list | dict = self._read(blanked)
         self._make_updates()
         self.base_data = self.post_processing(self.base_data)
         self._write()
 
-    def _read(self) -> dict | list | None:
-        if not path.isfile(self.path):
-            return []
+    def _read(self, blanked: bool) -> dict | list | None:
+        if not path.isfile(self.path) or blanked:
+            return None
         with open(self.path, 'r') as file_object:
             return self.loader(file_object)
 
@@ -55,21 +55,24 @@ class JsonBuilder(_BaseBuilder):
         return json.dump(new_data, file_object, indent=4)
 
     def recursive_update(self, data: dict | list, update):
+        if not data:
+            return update
         if isinstance(data, dict):
-            if isinstance(update, list):
-                for upd_part in update:
-                    data = self.recursive_update(data, upd_part)
-            if isinstance(update, dict):
-                for k, v in update.items():
-                    data[k] = v if k not in data else self.recursive_update(data[k], v)
+            match update:
+                case list(update):
+                    for upd_part in update:
+                        data = self.recursive_update(data, upd_part)
+                case dict(update):
+                    for key, val in update.items():
+                        data[key] = val if key not in data else self.recursive_update(data[key], val)
         if isinstance(data, list):
-            if not data:
-                return update
-            if isinstance(update, tuple):
-                return list(update)
-            if isinstance(update, list):
-                data.extend(update)
-            data.append(update)
+            match update:
+                case tuple(update):
+                    return update[0] if len(update) == 1 else list(update)
+                case list(update):
+                    data.extend(update)
+                case _:
+                    data.append(update)
         return data
 
 
@@ -78,24 +81,29 @@ class TomlBuilder(_BaseBuilder):
         return toml.load(file_object)
 
     def writer(self, new_data: dict | list, file_object: TextIOWrapper):
+        if not isinstance(new_data, dict):
+            raise TypeError("Toml file cannot be built from a list form data, only DICT data!")
         return toml.dump(new_data, file_object)
 
     def recursive_update(self, data: dict | list, update):
+        if not data:
+            return update
         if isinstance(data, dict):
-            if isinstance(update, list):
-                for upd_part in update:
-                    data = self.recursive_update(data, upd_part)
-            if isinstance(update, dict):
-                for k, v in update.items():
-                    data[k] = v if k not in data else self.recursive_update(data[k], v)
+            match update:
+                case list(update):
+                    for upd_part in update:
+                        data = self.recursive_update(data, upd_part)
+                case dict(update):
+                    for key, val in update.items():
+                        data[key] = val if key not in data else self.recursive_update(data[key], val)
         if isinstance(data, list):
-            if not data:
-                return update
-            if isinstance(update, tuple):
-                return list(update)
-            if isinstance(update, list):
-                data.extend(update)
-            data.append(update)
+            match update:
+                case tuple(update):
+                    return update[0] if len(update) == 1 else list(update)
+                case list(update):
+                    data.extend(update)
+                case _:
+                    data.append(update)
         return data
 
 
@@ -107,21 +115,24 @@ class YamlBuilder(_BaseBuilder):
         return yaml.dump(new_data, file_object, indent=2, Dumper=yaml.Dumper)
 
     def recursive_update(self, data: dict | list, update):
+        if not data:
+            return update
         if isinstance(data, dict):
-            if isinstance(update, list):
-                for upd_part in update:
-                    data = self.recursive_update(data, upd_part)
-            if isinstance(update, dict):
-                for k, v in update.items():
-                    data[k] = v if k not in data else self.recursive_update(data[k], v)
+            match update:
+                case list(update):
+                    for upd_part in update:
+                        data = self.recursive_update(data, upd_part)
+                case dict(update):
+                    for key, val in update.items():
+                        data[key] = val if key not in data else self.recursive_update(data[key], val)
         if isinstance(data, list):
-            if not data:
-                return update
-            if isinstance(update, tuple):
-                return list(update)
-            if isinstance(update, list):
-                data.extend(update)
-            data.append(update)
+            match update:
+                case tuple(update):
+                    return update[0] if len(update) == 1 else list(update)
+                case list(update):
+                    data.extend(update)
+                case _:
+                    data.append(update)
         return data
 
 
@@ -132,19 +143,22 @@ class TxtBuilder(_BaseBuilder):
     def writer(self, new_data: list, file_object: TextIOWrapper):
         file_object.writelines(new_data)
 
-    def recursive_update(self, base_data: list[str], update) -> dict | list:
-        if isinstance(update, tuple):
-            if isinstance(update[0], int):
-                base_data[update[0]] = update[1]
-            if isinstance(update[0], str):
-                base_data = [line.replace(update[0], update[1]) for line in base_data]
-        elif isinstance(update, dict):
-            for k, v in update.items():
-                base_data = [line if k not in line else v for line in base_data]
-        elif isinstance(update, list):
-            base_data.extend(update)
-        else:
-            base_data.append(str(update))
+    def recursive_update(self, base_data: list[str], update) -> list:
+        if not base_data:
+            return update
+        match update:
+            case tuple(update):
+                if isinstance(update[0], int):
+                    base_data[update[0]] = update[1]
+                if isinstance(update[0], str):
+                    base_data = [line.replace(update[0], update[1]) for line in base_data]
+            case list(update):
+                base_data.extend(update)
+            case dict(update):
+                for k, v in update.items():
+                    base_data = [line if k not in line else v for line in base_data]
+            case _:
+                base_data.append(str(update))
         return base_data
 
     def post_processing(self, base_data: list[str]) -> list:
@@ -159,8 +173,9 @@ class FileBuilder:
         "yaml": YamlBuilder
     }
 
-    def __init__(self, path: str, type_: str | None = None) -> None:
+    def __init__(self, path: str, type_: str | None = None, blanked=False) -> None:
         self.path = path
+        self.blanked = blanked
         self.updates = []
         self.type_ = self.path.split('.')[-1].lower() if type_ is None else type_
         self.Builder = self.file_types.get(self.type_, TxtBuilder)
@@ -174,4 +189,4 @@ class FileBuilder:
             remove(self.path)
 
     def save(self):
-        self.Builder(self.path, self.updates)
+        self.Builder(self.path, deepcopy(self.updates), self.blanked)
