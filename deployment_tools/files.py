@@ -43,8 +43,32 @@ class _BaseBuilder:
         for update in self.updates:
             self.base_data = self.recursive_update(self.base_data, update)
 
-    def recursive_update(self, base_data: dict | list, update) -> dict | list:
-        raise NotImplementedError()
+    def handle_dict_base(self, data: dict, update):
+        match update:
+            case list(update):
+                for upd_part in update:
+                    data = self.recursive_update(data, upd_part)
+            case dict(update):
+                for key, val in update.items():
+                    data[key] = val if key not in data else self.recursive_update(data[key], val)
+        return data
+
+    def handle_list_base(self, data: list, update):
+        match update:
+            case {"index": int(idx), "value": val}: data[idx] = val
+            case tuple(update): data = update[0] if len(update) == 1 else list(update)
+            case list(update): data.extend(update)
+            case _: data.append(update)
+        return data
+
+    def recursive_update(self, data: dict | list, update):
+        if not data:
+            return update
+        if isinstance(data, dict):
+            return self.handle_dict_base(data, update)
+        if isinstance(data, list):
+            return self.handle_list_base(data, update)
+        return data
 
 
 class JsonBuilder(_BaseBuilder):
@@ -53,27 +77,6 @@ class JsonBuilder(_BaseBuilder):
 
     def writer(self, new_data: dict | list, file_object: TextIOWrapper):
         return json.dump(new_data, file_object, indent=4)
-
-    def recursive_update(self, data: dict | list, update):
-        if not data:
-            return update
-        if isinstance(data, dict):
-            match update:
-                case list(update):
-                    for upd_part in update:
-                        data = self.recursive_update(data, upd_part)
-                case dict(update):
-                    for key, val in update.items():
-                        data[key] = val if key not in data else self.recursive_update(data[key], val)
-        if isinstance(data, list):
-            match update:
-                case tuple(update):
-                    return update[0] if len(update) == 1 else list(update)
-                case list(update):
-                    data.extend(update)
-                case _:
-                    data.append(update)
-        return data
 
 
 class TomlBuilder(_BaseBuilder):
@@ -85,26 +88,10 @@ class TomlBuilder(_BaseBuilder):
             raise TypeError("Toml file cannot be built from a list form data, only DICT data!")
         return toml.dump(new_data, file_object)
 
-    def recursive_update(self, data: dict | list, update):
-        if not data:
-            return update
-        if isinstance(data, dict):
-            match update:
-                case list(update):
-                    for upd_part in update:
-                        data = self.recursive_update(data, upd_part)
-                case dict(update):
-                    for key, val in update.items():
-                        data[key] = val if key not in data else self.recursive_update(data[key], val)
-        if isinstance(data, list):
-            match update:
-                case tuple(update):
-                    return update[0] if len(update) == 1 else list(update)
-                case list(update):
-                    data.extend(update)
-                case _:
-                    data.append(update)
-        return data
+    def post_processing(self, base_data) -> list | dict:
+        if not isinstance(base_data, dict):
+            raise TypeError(f'Toml can only be build from dict! The proveded base is of type {type(base_data)}!')
+        return base_data
 
 
 class YamlBuilder(_BaseBuilder):
@@ -113,27 +100,6 @@ class YamlBuilder(_BaseBuilder):
 
     def writer(self, new_data: dict | list, file_object: TextIOWrapper):
         return yaml.dump(new_data, file_object, indent=2, Dumper=yaml.Dumper)
-
-    def recursive_update(self, data: dict | list, update):
-        if not data:
-            return update
-        if isinstance(data, dict):
-            match update:
-                case list(update):
-                    for upd_part in update:
-                        data = self.recursive_update(data, upd_part)
-                case dict(update):
-                    for key, val in update.items():
-                        data[key] = val if key not in data else self.recursive_update(data[key], val)
-        if isinstance(data, list):
-            match update:
-                case tuple(update):
-                    return update[0] if len(update) == 1 else list(update)
-                case list(update):
-                    data.extend(update)
-                case _:
-                    data.append(update)
-        return data
 
 
 class TxtBuilder(_BaseBuilder):
@@ -147,18 +113,13 @@ class TxtBuilder(_BaseBuilder):
         if not base_data:
             return update
         match update:
-            case tuple(update):
-                if isinstance(update[0], int):
-                    base_data[update[0]] = update[1]
-                if isinstance(update[0], str):
-                    base_data = [line.replace(update[0], update[1]) for line in base_data]
-            case list(update):
-                base_data.extend(update)
+            case list(update): base_data.extend(update)
+            case [int(idx), new_line]: base_data[idx] = new_line
+            case [str(old_str), str(new_str)]: base_data = [line.replace(old_str, new_str) for line in base_data]
             case dict(update):
                 for k, v in update.items():
                     base_data = [line if k not in line else v for line in base_data]
-            case _:
-                base_data.append(str(update))
+            case _: base_data.append(str(update))
         return base_data
 
     def post_processing(self, base_data: list[str]) -> list:
@@ -190,3 +151,27 @@ class FileBuilder:
 
     def save(self):
         self.Builder(self.path, deepcopy(self.updates), self.blanked)
+
+    def set_value_in_list_config(self, index: int, value):
+        """
+            Used to place value at position in list-type configs.
+            You can directly use self += {"index":i, "value":v}
+        """
+        if isinstance(self.Builder, YamlBuilder) or isinstance(self.Builder, JsonBuilder):
+            self.updates.append({"index": index, "value": value})
+
+    def replace_in_txt_file(self, old_str: str, new_str: str):
+        """
+            Replace string in all lines, you can directly use self += (old, new)
+        """
+        self.updates.append((old_str, new_str))
+
+    def set_config_update_with_list_override(self, update):
+        if isinstance(update, dict):
+            for k, v in update.items():
+                update[k] = self.set_config_update_with_list_override(v)
+        elif isinstance(update, list):
+            update = tuple(update)
+        else:
+            update = (update,)
+        self.updates.append(update)

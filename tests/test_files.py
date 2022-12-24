@@ -1,4 +1,5 @@
-from deployment_tools.files import FileTransformationError, FileBuilder
+from deployment_tools.files import FileBuilder
+import pytest
 import json
 import toml
 import yaml
@@ -16,23 +17,23 @@ class TestCaseDictType():
 
     def create_complex_dict_type_and_check(self, path: str, loader):
         test_file = FileBuilder(path, blanked=True)
-        test_file += self.TEST_DATA_LIST
-        test_file += "asd"
-        test_file += {1: 1, 2: 2}
+        test_file + self.TEST_DATA_LIST
+        test_file + "asd"
+        test_file + {1: 1, 2: 2}
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data) == self.TEST_DATA_LIST + ['asd', {'1': 1, '2': 2}]
 
     def create_dict_type_file_and_check(self, path: str, loader):
         test_file = FileBuilder(path)
-        test_file += self.TEST_DATA
+        test_file + self.TEST_DATA
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data) == self.TEST_DATA
 
     def update_dict_type_file_and_check(self, path: str, loader):
         test_file = FileBuilder(path)
-        test_file += self.TEST_UPDATE
+        test_file + self.TEST_UPDATE
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data) == {**self.TEST_DATA, **self.TEST_UPDATE}
@@ -40,8 +41,8 @@ class TestCaseDictType():
     @staticmethod
     def update_list_without_replacing_and_check(path: str, loader):
         test_file = FileBuilder(path)
-        test_file += {'list': [4]}
-        test_file += {'list': 5}
+        test_file + {'list': [4]}
+        test_file + {'list': 5}
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data)['list'] == [3, 4, 5]
@@ -49,7 +50,7 @@ class TestCaseDictType():
     @staticmethod
     def update_existing_key_and_check(path: str, loader):
         test_file = FileBuilder(path)
-        test_file += {'list': (4, 5)}
+        test_file + {'list': (4, 5)}
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data)['list'] == [4, 5]
@@ -71,6 +72,8 @@ class TestCaseDictType():
         self.update_dict_type_file_and_check(self.TEST_TOML, toml.load)
         self.update_list_without_replacing_and_check(self.TEST_TOML, toml.load)
         self.update_existing_key_and_check(self.TEST_TOML, toml.load)
+        with pytest.raises(TypeError):
+            self.create_complex_dict_type_and_check(self.TEST_TOML, toml.load)
 
     def test_yaml(self):
         def loader(path):
@@ -85,8 +88,8 @@ class TestCaseDictType():
         test_txt = FileBuilder(self.TEST_TXT)
         lines = ["first_line", "second_line"]
         third_line = "third line\n"
-        test_txt += lines
-        test_txt += third_line
+        test_txt + lines
+        test_txt + third_line
         test_txt.save()
         with open(self.TEST_TXT, 'r') as txt:
             assert txt.readlines() == [line + '\n' for line in lines] + [third_line]
