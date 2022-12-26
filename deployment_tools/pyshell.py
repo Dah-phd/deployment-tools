@@ -17,9 +17,8 @@ class Command:
 
     def __init__(self, args: list[str], verbose: bool = True) -> None:
         self.args = args
-        run_kwargs = {'shell': True} if PLATFORM == 'win32' else {}
         self._process = subprocess.run(
-            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **run_kwargs
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
         )
         self._failure_cond = None
         self._success_cond = None

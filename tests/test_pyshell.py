@@ -34,5 +34,5 @@ def test_not_success():
 
 
 def test_err_not_failure():
-    cmd = Command('asdasf').set_failure('d;lfjasl;pkfjasol;f')
+    cmd = Command(['asdasf']).set_failure('d;lfjasl;pkfjasol;f')
     assert not cmd.is_failure()

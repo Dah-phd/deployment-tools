@@ -1,4 +1,4 @@
-from deployment_tools.files import FileBuilder
+from deployment_tools.files import create_file_builder
 import pytest
 import json
 import toml
@@ -16,7 +16,7 @@ class TestCaseDictType():
     TEST_TXT = 'test.txt'
 
     def create_complex_dict_type_and_check(self, path: str, loader):
-        test_file = FileBuilder(path, blanked=True)
+        test_file = create_file_builder(path, blanked=True)
         test_file + self.TEST_DATA_LIST
         test_file + "asd"
         test_file + {1: 1, 2: 2}
@@ -25,14 +25,14 @@ class TestCaseDictType():
             assert loader(data) == self.TEST_DATA_LIST + ['asd', {'1': 1, '2': 2}]
 
     def create_dict_type_file_and_check(self, path: str, loader):
-        test_file = FileBuilder(path)
+        test_file = create_file_builder(path)
         test_file + self.TEST_DATA
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data) == self.TEST_DATA
 
     def update_dict_type_file_and_check(self, path: str, loader):
-        test_file = FileBuilder(path)
+        test_file = create_file_builder(path)
         test_file + self.TEST_UPDATE
         test_file.save()
         with open(path, 'r') as data:
@@ -40,24 +40,23 @@ class TestCaseDictType():
 
     @staticmethod
     def update_list_without_replacing_and_check(path: str, loader):
-        test_file = FileBuilder(path)
+        test_file = create_file_builder(path)
         test_file + {'list': [4]}
-        test_file + {'list': 5}
         test_file.save()
         with open(path, 'r') as data:
-            assert loader(data)['list'] == [3, 4, 5]
+            assert loader(data)['list'] == [4]
 
     @staticmethod
     def update_existing_key_and_check(path: str, loader):
-        test_file = FileBuilder(path)
-        test_file + {'list': (4, 5)}
+        test_file = create_file_builder(path)
+        test_file + {'list': [4, 5]}
         test_file.save()
         with open(path, 'r') as data:
             assert loader(data)['list'] == [4, 5]
 
     @staticmethod
     def remove_and_check(path):
-        FileBuilder(path).delete()
+        create_file_builder(path).delete()
         assert not os.path.isfile(path)
 
     def test_json(self):
@@ -85,7 +84,7 @@ class TestCaseDictType():
         self.create_complex_dict_type_and_check(self.TEST_JSON, loader)
 
     def test_txt_creation(self):
-        test_txt = FileBuilder(self.TEST_TXT)
+        test_txt = create_file_builder(self.TEST_TXT)
         lines = ["first_line", "second_line"]
         third_line = "third line\n"
         test_txt + lines
