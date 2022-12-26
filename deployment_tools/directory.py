@@ -21,16 +21,24 @@ class WorkingDirectory:
     def cwd(self):
         return os.getcwd()
 
-    def _get_all_files_or_dirs(self, ignore_dot_files=True):
+    def get_all_files_or_dirs(self, ignore_dot_files=True):
         if ignore_dot_files:
             return [file_or_dir for file_or_dir in os.listdir(self.cwd) if file_or_dir[0] != "."]
         return os.listdir(self.cwd)
 
+    @staticmethod
+    def _build_path_if_not_exist(path: str):
+        if not os.path.isdir(path):
+            os.mkdir(path)
+
+    @staticmethod
+    def _not_move_in_self(destination, file_or_dir):
+        return os.path.abspath(destination) != os.path.abspath(file_or_dir)
+
     def go_to(self, path: str):
         if os.path.isfile(path):
             raise FileExistsError("You can only use directory or non-existing paths for path!")
-        if not os.path.isdir(path):
-            os.mkdir(path)
+        self._build_path_if_not_exist(path)
         self.previous_dirs.append(self.cwd)
         os.chdir(path)
 
@@ -51,6 +59,7 @@ class WorkingDirectory:
 
     def move_file(self, new_path: str, file_or_dir_name: str, replace_if_exists=True):
         "Used to move file or dir."
+        self._build_path_if_not_exist(new_path)
         new_path = os.path.join(new_path, file_or_dir_name)
         if os.path.abspath(file_or_dir_name) == os.path.abspath(new_path):
             return
@@ -62,11 +71,12 @@ class WorkingDirectory:
     def move_files(self, new_path: str, files_or_dirs: list[str] or str = ALL, ignore_dot_files=True) -> list[str]:
         "Used to move files or dirs. If no files are specified will move everything from current dir."
         if files_or_dirs == ALL:
-            files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
-        return [self.move_file(new_path, file_or_dir) for file_or_dir in files_or_dirs]
+            files_or_dirs = self.get_all_files_or_dirs(ignore_dot_files)
+        return [self.move_file(new_path, file_or_dir) for file_or_dir in files_or_dirs if self._not_move_in_self(new_path, file_or_dir)]
 
     def copy_file(self, new_path: str, file_or_dir_name: str, replace_if_exists=True) -> str:
         "Used to copy file or dir."
+        self._build_path_if_not_exist(new_path)
         new_path = os.path.join(new_path, file_or_dir_name)
         if not replace_if_exists and os.path.isfile(new_path) or os.path.isdir(new_path):
             raise FileExistsError(f"{new_path} is present!")
@@ -79,8 +89,8 @@ class WorkingDirectory:
     def copy_files(self, new_path: str, files_or_dirs: list[str], ignore_dot_files=True, replace_if_exists=True) -> str:
         "Used to move files or dirs. If no files are specified will move everything from current dir."
         if files_or_dirs == ALL:
-            files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
-        return [self.copy_file(new_path, file_or_dir, replace_if_exists) for file_or_dir in files_or_dirs]
+            files_or_dirs = self.get_all_files_or_dirs(ignore_dot_files)
+        return [self.copy_file(new_path, file_or_dir, replace_if_exists) for file_or_dir in files_or_dirs if self._not_move_in_self(new_path, file_or_dir)]
 
     @staticmethod
     def remove(file_or_dir):
@@ -114,4 +124,4 @@ class WorkingDirectory:
         file_builder.save()
 
     def __getitem__(self, key: str):
-        return create_file_builder(key)
+        return create_file_builder(key).base_data
