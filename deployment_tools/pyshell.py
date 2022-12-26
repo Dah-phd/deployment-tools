@@ -15,10 +15,10 @@ class Command:
     If the tests run by the command fail exception with information will be raised, otherwise the code will proceed with execution.
     """
 
-    def __init__(self, args: list[str], verbose: bool = True) -> None:
+    def __init__(self, args: list[str], verbose: bool = True, shell: bool = True) -> None:
         self.args = args
         self._process = subprocess.run(
-            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell
         )
         self._failure_cond = None
         self._success_cond = None

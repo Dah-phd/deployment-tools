@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "deployment-tools"
-version = "0.1.4"
+version = "0.1.5"
 description = "Simple to use command running tools and file transformation/move tools."
 authors = ["Daniel Nikolaev <toolsproed@gmail.com>"]
 readme = "README.md"
