@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 import shutil
-from .files import FileTransformer
+from .files import create_file_builder
 ALL = "__all__"
 
 
@@ -26,7 +26,7 @@ class WorkingDirectory:
             return [file_or_dir for file_or_dir in os.listdir(self.cwd) if file_or_dir[0] != "."]
         return os.listdir(self.cwd)
 
-    def _target_withing_path(path: str, target: str) -> bool:
+    def _target_is_withing_path(path: str, target: str) -> bool:
         return os.path.abspath(path) in os.path.abspath(target)
 
     def go_to(self, path: str):
@@ -74,6 +74,7 @@ class WorkingDirectory:
             files_or_dirs = self._get_all_files_or_dirs(ignore_dot_files)
         return [self.copy_file(path, file_or_dir, replace_if_exists) for file_or_dir in files_or_dirs]
 
+    @staticmethod
     def remove(file_or_dir):
         shutil.rmtree(file_or_dir) if os.path.isdir(file_or_dir) else os.remove(file_or_dir)
 
@@ -95,18 +96,14 @@ class WorkingDirectory:
         self.go_to(str(other))
         return self
 
-    def __setitem__(self, path: str, lines: list[str] or str):
-        if isinstance(lines, list) or isinstance(lines, str):
-            FileTransformer(path).add_line(lines).save()
-        raise TypeError("UNSUPORTED ASSIGNMENT!")
+    def __sub__(self, other) -> WorkingDirectory:
+        self.remove(other)
+        return self
 
-    def __getitem__(self, path: str) -> str or FileTransformer:
-        if os.path.isdir(path):
-            return os.path.abspath(path)
-        return FileTransformer(path)
+    def __setitem__(self, key: str, item):
+        file_builder = create_file_builder(key)
+        file_builder + item
+        file_builder.save()
 
-
-if __name__ == "__main__":
-    wd = WorkingDirectory()
-    wd.copy_file("tests", "test.txt")
-    print(wd)
+    def __getitem__(self, key: str):
+        return create_file_builder(key)
