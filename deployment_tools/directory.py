@@ -33,7 +33,7 @@ class WorkingDirectory:
 
     @staticmethod
     def _not_move_in_self(destination, file_or_dir):
-        return os.path.abspath(destination) != os.path.abspath(file_or_dir)
+        return os.path.abspath(os.path.join(destination, file_or_dir)) != os.path.abspath(file_or_dir)
 
     def go_to(self, path: str):
         if os.path.isfile(path):
